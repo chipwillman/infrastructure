@@ -2,18 +2,22 @@
   "AWSTemplateFormatVersion": "2010-09-09",
   "Description": "This template creates Windows Jenkins Box .",
   "Parameters": {
-	"PrivateSubnetA" : {
-	  "Description": "Private subnet A id",
-	  "Type": "String"
-	},
-	"PrivateSubnetB" : {
-	  "Description": "Private subnet A id",
-	  "Type": "String"
-	},
-	"VpcId" : {
-	  "Description": "VpcId",
-	  "Type": "String"
-	},
+    "PrivateSubnetA": {
+      "Description": "Private subnet A id",
+      "Type": "String"
+    },
+    "PrivateSubnetB": {
+      "Description": "Private subnet B id",
+      "Type": "String"
+    },
+    "VpcId": {
+      "Description": "VpcId",
+      "Type": "String"
+    },
+    "ArtefactS3BucketName": {
+      "Description": "Name of the bucket used for build artefacts",
+      "Type": "String"
+    },
     "ManagementOrigin": {
       "Description": "The CIDR block from which management SSH connections will be permitted to NAT instances and bastion hosts",
       "Type": "String",
@@ -125,11 +129,11 @@
     "JenkinsWaitHandle": {
       "Type": "AWS::CloudFormation::WaitConditionHandle"
     },
-	"JenkinsSecurityGroup": {
+    "JenkinsSecurityGroup": {
       "Properties": {
         "GroupDescription": "Jenkins Build Machine security group",
         "VpcId": {
-		  "Ref": "VpcId"
+          "Ref": "VpcId"
         },
         "SecurityGroupIngress": [
           {
@@ -139,9 +143,9 @@
             "IpProtocol": "tcp"
           },
           {
-			"CidrIp": {
+            "CidrIp": {
               "Ref": "ManagementOrigin"
-			},
+            },
             "FromPort": 22,
             "ToPort": 22,
             "IpProtocol": "tcp"
@@ -153,9 +157,9 @@
             "IpProtocol": "tcp"
           },
           {
-			"CidrIp": {
+            "CidrIp": {
               "Ref": "ManagementOrigin"
-			},
+            },
             "FromPort": 80,
             "ToPort": 80,
             "IpProtocol": "tcp"
@@ -167,9 +171,9 @@
             "IpProtocol": "tcp"
           },
           {
-			"CidrIp": {
+            "CidrIp": {
               "Ref": "ManagementOrigin"
-			},
+            },
             "FromPort": 8172,
             "ToPort": 8172,
             "IpProtocol": "tcp"
@@ -181,9 +185,9 @@
             "IpProtocol": "tcp"
           },
           {
-			"CidrIp": {
+            "CidrIp": {
               "Ref": "ManagementOrigin"
-			},
+            },
             "FromPort": 3389,
             "ToPort": 3389,
             "IpProtocol": "tcp"
@@ -191,7 +195,7 @@
         ]
       },
       "Type": "AWS::EC2::SecurityGroup"
-	},
+    },
     "JenkinsServerRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
@@ -223,27 +227,16 @@
                 },
                 {
                   "Effect": "Allow",
-                  "Action": "s3:GetObject",
+                  "Action": "s3:*",
                   "Resource": {
                     "Fn::Join": [
                       "",
                       [
                         "arn:aws:s3:::",
-                        { "Ref": "ManifestS3BucketName" },
+                        {
+                          "Ref": "ArtefactS3BucketName"
+                        },
                         "/*"
-                      ]
-                    ]
-                  }
-                },
-                {
-                  "Effect": "Allow",
-                  "Action": "s3:ListBucket",
-                  "Resource": {
-                    "Fn::Join": [
-                      "",
-                      [
-                        "arn:aws:s3:::",
-                        { "Ref": "ManifestS3BucketName" }
                       ]
                     ]
                   }
@@ -254,17 +247,17 @@
         ]
       }
     },
-
-   "JenkinsServerInstanceProfile": {
+    "JenkinsServerInstanceProfile": {
       "Type": "AWS::IAM::InstanceProfile",
       "Properties": {
         "Path": "/",
         "Roles": [
-          { "Ref": "JenkinsServerRole" }
+          {
+            "Ref": "JenkinsServerRole"
+          }
         ]
       }
     },
- 
     "Jenkins": {
       "Type": "AWS::EC2::Instance",
       "Metadata": {
@@ -441,7 +434,9 @@
             "VirtualName": "ephemeral0"
           }
         ],
-        "IamInstanceProfile": { "Ref": "JenkinsServerInstanceProfile" },
+        "IamInstanceProfile": {
+          "Ref": "JenkinsServerInstanceProfile"
+        },
         "InstanceType": {
           "Ref": "InstanceType"
         },
@@ -466,7 +461,7 @@
           "Ref": "KeyPairName"
         },
         "SubnetId": {
-		  "Ref": "PrivateSubnetA"
+          "Ref": "PrivateSubnetA"
         },
         "Tags": [
           {
@@ -486,8 +481,8 @@
           {
             "Key": "Env",
             "Value": {
-			  "Ref": "Environment"
-			}
+              "Ref": "Environment"
+            }
           }
         ],
         "UserData": {

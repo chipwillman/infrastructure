@@ -11,6 +11,10 @@
     "ParameterKey": "VpcId",
 	"ParameterValue" : "vpc-cf4274aa"
   },
+  {    
+    "ParameterKey": ArtefactS3BucketName",
+	"ParameterValue" : "cew-build-artefacts"
+  },
   {
     "ParameterKey": "ManagementOrigin",
 	"ParameterValue" : "122.151.148.92/32"
