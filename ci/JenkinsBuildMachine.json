@@ -441,7 +441,7 @@
             "VirtualName": "ephemeral0"
           }
         ],
-        "IamInstanceProfile": { Ref: "JenkinsServerInstanceProfile" },
+        "IamInstanceProfile": { "Ref": "JenkinsServerInstanceProfile" },
         "InstanceType": {
           "Ref": "InstanceType"
         },
