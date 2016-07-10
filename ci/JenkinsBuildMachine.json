@@ -2,19 +2,30 @@
   "AWSTemplateFormatVersion": "2010-09-09",
   "Description": "This template creates Windows Jenkins Box .",
   "Parameters": {
-    "AZ": {
-      "AllowedValues": [
-        "ap-southeast-2a",
-        "ap-southeast-2b"
-      ],
-      "Default": "ap-southeast-2a",
-      "Description": "The Availability Zone",
-      "Type": "String"
+	"PrivateSubnetA" : {
+	  "Description": "Private subnet A id",
+	  "Type": "String"
+	},
+	"PrivateSubnetB" : {
+	  "Description": "Private subnet A id",
+	  "Type": "String"
+	},
+	"VpcId" : {
+	  "Description": "VpcId",
+	  "Type": "String"
+	},
+    "ManagementOrigin": {
+      "Description": "The CIDR block from which management SSH connections will be permitted to NAT instances and bastion hosts",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.1.0/24"
     },
     "Environment": {
       "Description": "Deployment Environment",
       "Type": "String",
-      "Default": "myenv"
+      "Default": "dev"
     },
     "KeyPairName": {
       "Default": "chipwillman.home",
@@ -38,22 +49,9 @@
         "c1.medium",
         "c1.xlarge"
       ]
-    },
-    "SecurityGroups": {
-      "Default": "sg-5c16c739",
-      "Description": "The security group to use",
-      "Type": "String"
     }
   },
   "Mappings": {
-    "SubnetMap": {
-      "ap-southeast-2a": {
-        "subnet": "subnet-52e20825"
-      },
-      "ap-southeast-2b": {
-        "subnet": "subnet-0836fb6d"
-      }
-    },
     "AWSInstanceType2Arch": {
       "m1.small": {
         "Arch": "64"
@@ -127,6 +125,73 @@
     "JenkinsWaitHandle": {
       "Type": "AWS::CloudFormation::WaitConditionHandle"
     },
+	"JenkinsSecurityGroup": {
+      "Properties": {
+        "GroupDescription": "Jenkins Build Machine security group",
+        "VpcId": {
+		  "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": "10.12.0.0/16",
+            "FromPort": 22,
+            "ToPort": 22,
+            "IpProtocol": "tcp"
+          },
+          {
+			"CidrIp": {
+              "Ref": "ManagementOrigin"
+			},
+            "FromPort": 22,
+            "ToPort": 22,
+            "IpProtocol": "tcp"
+          },
+          {
+            "CidrIp": "10.12.0.0/16",
+            "FromPort": 80,
+            "ToPort": 80,
+            "IpProtocol": "tcp"
+          },
+          {
+			"CidrIp": {
+              "Ref": "ManagementOrigin"
+			},
+            "FromPort": 80,
+            "ToPort": 80,
+            "IpProtocol": "tcp"
+          },
+          {
+            "CidrIp": "10.12.0.0/16",
+            "FromPort": 8172,
+            "ToPort": 8172,
+            "IpProtocol": "tcp"
+          },
+          {
+			"CidrIp": {
+              "Ref": "ManagementOrigin"
+			},
+            "FromPort": 8172,
+            "ToPort": 8172,
+            "IpProtocol": "tcp"
+          },
+          {
+            "CidrIp": "10.12.0.0/16",
+            "FromPort": 3389,
+            "ToPort": 3389,
+            "IpProtocol": "tcp"
+          },
+          {
+			"CidrIp": {
+              "Ref": "ManagementOrigin"
+			},
+            "FromPort": 3389,
+            "ToPort": 3389,
+            "IpProtocol": "tcp"
+          }
+        ]
+      },
+      "Type": "AWS::EC2::SecurityGroup"
+	},
     "Jenkins": {
       "Type": "AWS::EC2::Instance",
       "Metadata": {
@@ -327,19 +392,8 @@
         "KeyName": {
           "Ref": "KeyPairName"
         },
-        "SecurityGroupIds": [
-          {
-            "Ref": "SecurityGroups"
-          }
-        ],
         "SubnetId": {
-          "Fn::FindInMap": [
-            "SubnetMap",
-            {
-              "Ref": "AZ"
-            },
-            "subnet"
-          ]
+		  "Ref": "PrivateSubnetA"
         },
         "Tags": [
           {
@@ -358,7 +412,9 @@
           },
           {
             "Key": "Env",
-            "Value": "aws"
+            "Value": {
+			  "Ref": "Environment"
+			}
           }
         ],
         "UserData": {

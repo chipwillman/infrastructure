@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "PrivateSubnetA",
+	"ParameterValue" : "subnet-42322335"
+  },
+  {
+    "ParameterKey": "PrivateSubnetB",
+	"ParameterValue" : "subnet-f4cd3990"
+  },
+  {
+    "ParameterKey": "VpcId",
+	"ParameterValue" : "vpc-cf4274aa"
+  },
+  {
+    "ParameterKey": "ManagementOrigin",
+	"ParameterValue" : "122.151.148.92/32"
+  }
+]

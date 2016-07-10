@@ -1053,7 +1053,7 @@
             "IpProtocol": "tcp",
             "FromPort": "65422",
             "ToPort": "65422",
-			"CidrBlock": {
+			"CidrIp": {
 				"Ref": "ManagementOrigin"
 			}
           },
