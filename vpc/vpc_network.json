@@ -1,0 +1,1389 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "VPC NAT instances for outbound traffic to the internet, one in each AZ. Internal DNS refers to a route-53 PUBLIC hosted zone.",
+  "Parameters": {
+    "InternalIpBase": {
+      "Description": "The base CIDR block to use for the whole VPC",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.0.0/16",
+      "Default": "10.12.0.0/16"
+    },
+    "PublicSubnetACIDR": {
+      "Description": "The CIDR block for the public subnet in AZ A",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.255.0/24",
+      "Default": "10.12.255.0/24"
+    },
+    "PublicSubnetBCIDR": {
+      "Description": "The CIDR block for the public subnet in AZ B",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.1.0/24",
+      "Default": "10.12.254.0/24"
+    },
+    "NATSubnetACIDR": {
+      "Description": "The CIDR block for the NAT subnet in AZ A",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.1.0/24",
+      "Default": "10.12.253.0/27"
+    },
+    "NATSubnetBCIDR": {
+      "Description": "The CIDR block for the NAT subnet in AZ B",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.1.0/24",
+      "Default": "10.12.253.128/27"
+    },
+    "PrivateSubnetACIDR": {
+      "Description": "The CIDR block for the private (app server) subnet in AZ A",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.1.0/24",
+      "Default": "10.12.4.0/22"
+    },
+    "PrivateSubnetBCIDR": {
+      "Description": "The CIDR block for the private (app server) subnet in AZ B",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.1.0/24",
+      "Default": "10.12.8.0/22"
+    },
+    "ManagementOrigin": {
+      "Description": "The CIDR block from which management SSH connections will be permitted to NAT instances and bastion hosts",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "20",
+      "AllowedPattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+",
+      "ConstraintDescription": "Must be valid CIDR notation eg 172.16.1.0/24"
+    },
+    "DNSSearchPath": {
+      "Description": "The DNS search paths that instances in this VPC will use",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "128",
+      "ConstraintDescription": "One or more valid DNS subdomains (more than one becomes a search path)"
+    },
+    "DNSDomain": {
+      "Description": "The DNS domain that this VPC will host -- must already exist in Route53",
+      "Type": "String",
+      "MinLength": "10",
+      "MaxLength": "128",
+      "AllowedPattern": "^[a-z][a-z0-9-.]+\\.com",
+      "ConstraintDescription": "One or more valid DNS subdomains (more than one becomes a search path)"
+    },
+    "KeyPair": {
+      "Description": "The AWS SSH Keypair name to use; note that it will have the AWS Region appended to it (eg bedev)",
+      "Type": "String"
+    }
+  },
+  "Mappings": {
+    "AWSRegionToNATAMI": {
+      "us-east-1": {
+        "32": "ami-2e1bc047",
+        "64": "ami-f619c29f"
+      },
+      "us-west-1": {
+        "32": "ami-c7cc9e82",
+        "64": "ami-3bcc9e7e"
+      },
+      "us-west-2": {
+        "32": "ami-6eff725e",
+        "64": "ami-52ff7262"
+      },
+      "eu-west-1": {
+        "32": "ami-1de2d969",
+        "64": "ami-e5e2d991"
+      },
+      "ap-northeast-1": {
+        "32": "ami-12d86d13",
+        "64": "ami-14d86d15"
+      },
+      "ap-southeast-1": {
+        "32": "ami-00eb9352",
+        "64": "ami-02eb9350"
+      },
+      "ap-southeast-2": {
+        "32": "ami-a1980f9b",
+        "64": "ami-ab990e91"
+      },
+      "sa-east-1": {
+        "32": "ami-0439e619",
+        "64": "ami-0039e61d"
+      }
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "InternalIpBase"
+        },
+        "InstanceTenancy": "default"
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "My  Internet Gateway"
+          }
+        ]
+      }
+    },
+    "IGWAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "InternetGatewayId": {
+          "Ref": "InternetGateway"
+        },
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "PublicSubnetA": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {
+              "Fn::GetAZs": {
+                "Ref": "AWS::Region"
+              }
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Ref": "PublicSubnetACIDR"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": " public subnet in AZ A"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "PublicSubnetB": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "1",
+            {
+              "Fn::GetAZs": {
+                "Ref": "AWS::Region"
+              }
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Ref": "PublicSubnetBCIDR"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": " public subnet in AZ B"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "NATSubnetA": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {
+              "Fn::GetAZs": {
+                "Ref": "AWS::Region"
+              }
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Ref": "NATSubnetACIDR"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": " NAT subnet in AZ A"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "NATSubnetB": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "1",
+            {
+              "Fn::GetAZs": {
+                "Ref": "AWS::Region"
+              }
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Ref": "NATSubnetBCIDR"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": " NAT subnet in AZ B"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "PrivateSubnetA": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "0",
+            {
+              "Fn::GetAZs": {
+                "Ref": "AWS::Region"
+              }
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Ref": "PrivateSubnetACIDR"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": " private subnet in AZ A"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "PrivateSubnetB": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "AvailabilityZone": {
+          "Fn::Select": [
+            "1",
+            {
+              "Fn::GetAZs": {
+                "Ref": "AWS::Region"
+              }
+            }
+          ]
+        },
+        "CidrBlock": {
+          "Ref": "PrivateSubnetBCIDR"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": " private subnet in AZ B"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "NATSubnetACL": {
+      "Type": "AWS::EC2::NetworkAcl",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Network ACL for NAT subnet"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "NATSubnetIngressPermitEphemeralTCP": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 32768,
+          "To": 61000
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 500
+      }
+    },
+    "NATSubnetIngressPermitEphemeralUDP": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        },
+        "Protocol": 17,
+        "PortRange": {
+          "From": 32768,
+          "To": 61000
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 510
+      }
+    },
+    "NATSubnetIngressPermitICMP": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        },
+        "Protocol": 1,
+        "Icmp": {
+          "Code": "-1",
+          "Type": "-1"
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 520
+      }
+    },
+    "NATSubnetIngressPermitMgmtSSH": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "ManagementOrigin"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 22,
+          "To": 22
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 530
+      }
+    },
+    "NATSubnetIngressPermitVPCOutbound": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "InternalIpBase"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        },
+        "Protocol": -1,
+        "RuleAction": "allow",
+        "RuleNumber": 540
+      }
+    },
+    "NATSubnetIngressPermitNTP": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        },
+        "Protocol": 17,
+        "PortRange": {
+          "From": 123,
+          "To": 123
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 550
+      }
+    },
+    "NATSubnetEgressPermitALL": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": true,
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        },
+        "Protocol": "-1",
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NATSubnetANetACLAssoc": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "NATSubnetA"
+        },
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        }
+      }
+    },
+    "NATSubnetBNetACLAssoc": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "NATSubnetB"
+        },
+        "NetworkAclId": {
+          "Ref": "NATSubnetACL"
+        }
+      }
+    },
+    "NetworkACL": {
+      "Type": "AWS::EC2::NetworkAcl",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": " Network ACL for a VPC"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "NetworkAclPublicIngressPort80": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 80,
+          "To": 80
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NetworkAclPublicIngressPort443": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 443,
+          "To": 443
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 110
+      }
+    },
+    "NetworkAclPublicIngressPort22": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "ManagementOrigin"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 22,
+          "To": 22
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 120
+      }
+    },
+    "NetworkAclPrivateIngressPort3389": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "ManagementOrigin"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 3389,
+          "To": 3389
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 130
+      }
+    },
+    "NetworkAclPrivateIngressPortMsDeploy": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "ManagementOrigin"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 8172,
+          "To": 8172
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 140
+      }
+    },
+    "NetworkAclPublicEphemeralTCPReply": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 32768,
+          "To": 61000
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 150
+      }
+    },
+    "NetworkAclPublicEphemeralUDPReply": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 17,
+        "PortRange": {
+          "From": 32768,
+          "To": 61000
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 160
+      }
+    },
+    "NetworkAclPublicIngressICMP": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 1,
+        "Icmp": {
+          "Code": "-1",
+          "Type": "-1"
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 170
+      }
+    },
+    "NetworkAclPublicIngressAllInternal": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "InternalIpBase"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": "-1",
+        "PortRange": {
+          "From": 0,
+          "To": 65535
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 180
+      }
+    },
+    "NetworkAclPublicIngressPort943": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "ManagementOrigin"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 6,
+        "PortRange": {
+          "From": 943,
+          "To": 943
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 190
+      }
+    },
+    "NetworkAclPublicIngressPort1194": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": {
+          "Ref": "ManagementOrigin"
+        },
+        "Egress": false,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": 17,
+        "PortRange": {
+          "From": 1194,
+          "To": 1194
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 200
+      }
+    },
+    "NetworkAclPublicEgress": {
+      "Type": "AWS::EC2::NetworkAclEntry",
+      "Properties": {
+        "CidrBlock": "0.0.0.0/0",
+        "Egress": true,
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        },
+        "Protocol": "-1",
+        "PortRange": {
+          "From": 0,
+          "To": 65535
+        },
+        "RuleAction": "allow",
+        "RuleNumber": 100
+      }
+    },
+    "NetworkAclAssocPubA": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnetA"
+        },
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        }
+      }
+    },
+    "NetworkAclAssocPubB": {
+      "Type": "AWS::EC2::SubnetNetworkAclAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PublicSubnetB"
+        },
+        "NetworkAclId": {
+          "Ref": "NetworkACL"
+        }
+      }
+    },
+    "NATInstanceA": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionToNATAMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "64"
+          ]
+        },
+        "InstanceType": "m3.medium",
+        "KeyName": {
+          "Ref": "KeyPair"
+        },
+        "NetworkInterfaces": [
+          {
+            "NetworkInterfaceId": {
+              "Ref": "NATENIA"
+            },
+            "DeviceIndex": "0"
+          }
+        ],
+        "SourceDestCheck": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "VPC NAT A",
+                  {
+                    "Ref": "AWS::StackName"
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "lob",
+            "Value": "Delivery Services"
+          },
+          {
+            "Key": "application",
+            "Value": "VPC Infrastructure"
+          }
+        ],
+        "Monitoring": true
+      }
+    },
+    "NATENIA": {
+      "Type": "AWS::EC2::NetworkInterface",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "NATSubnetA"
+        },
+        "GroupSet": [
+          {
+            "Ref": "NATSecurityGroup"
+          }
+        ]
+      }
+    },
+    "NATEIPA": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "NATEIPAssociationA": {
+      "Type": "AWS::EC2::EIPAssociation",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "NATEIPA",
+            "AllocationId"
+          ]
+        },
+        "NetworkInterfaceId": {
+          "Ref": "NATENIA"
+        }
+      }
+    },
+    "NATADNSARecord": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "Comment": "NAT Instance in First AZ",
+        "HostedZoneName": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              "nat-a",
+              ".",
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Type": "A",
+        "TTL": "300",
+        "ResourceRecords": [
+          {
+            "Fn::GetAtt": [
+              "NATInstanceA",
+              "PrivateIp"
+            ]
+          }
+        ]
+      }
+    },
+    "NATInstanceB": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionToNATAMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "64"
+          ]
+        },
+        "InstanceType": "m3.medium",
+        "KeyName": {
+          "Ref": "KeyPair"
+        },
+        "NetworkInterfaces": [
+          {
+            "NetworkInterfaceId": {
+              "Ref": "NATENIB"
+            },
+            "DeviceIndex": "0"
+          }
+        ],
+        "SourceDestCheck": false,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  "VPC NAT B",
+                  {
+                    "Ref": "AWS::StackName"
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "lob",
+            "Value": "Delivery Services"
+          },
+          {
+            "Key": "application",
+            "Value": "VPC Infrastructure"
+          }
+        ],
+        "Monitoring": true
+      }
+    },
+    "NATENIB": {
+      "Type": "AWS::EC2::NetworkInterface",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "NATSubnetB"
+        },
+        "GroupSet": [
+          {
+            "Ref": "NATSecurityGroup"
+          }
+        ]
+      }
+    },
+    "NATEIPB": {
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "Domain": "vpc"
+      }
+    },
+    "NATEIPAssociationB": {
+      "Type": "AWS::EC2::EIPAssociation",
+      "Properties": {
+        "AllocationId": {
+          "Fn::GetAtt": [
+            "NATEIPB",
+            "AllocationId"
+          ]
+        },
+        "NetworkInterfaceId": {
+          "Ref": "NATENIB"
+        }
+      }
+    },
+    "NATBDNSARecord": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "Comment": "NAT Instance in AZ A",
+        "HostedZoneName": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              "nat-b",
+              ".",
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Type": "A",
+        "TTL": "300",
+        "ResourceRecords": [
+          {
+            "Fn::GetAtt": [
+              "NATInstanceB",
+              "PrivateIp"
+            ]
+          }
+        ]
+      }
+    },
+    "NATSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow outbound NAT from boxes inside the VPC",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "587",
+            "ToPort": "587",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "65422",
+            "ToPort": "65422",
+            "CidrIp": {
+              "Ref": "InternalIpBase"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": {
+              "Ref": "InternalIpBase"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": {
+              "Ref": "InternalIpBase"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Ref": "ManagementOrigin"
+            }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": {
+              "Ref": "InternalIpBase"
+            }
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "53",
+            "ToPort": "53",
+            "CidrIp": {
+              "Ref": "InternalIpBase"
+            }
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "123",
+            "ToPort": "123",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "icmp",
+            "FromPort": "-1",
+            "ToPort": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "65422",
+            "ToPort": "65422",
+			"CidrBlock": {
+				"Ref": "ManagementOrigin"
+			}
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "587",
+            "ToPort": "587",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "443",
+            "ToPort": "443",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "53",
+            "ToPort": "53",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "udp",
+            "FromPort": "123",
+            "ToPort": "123",
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "icmp",
+            "FromPort": "-1",
+            "ToPort": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "lob",
+            "Value": "Delivery Services"
+          },
+          {
+            "Key": "application",
+            "Value": "VPC Infrastructure"
+          }
+        ]
+      }
+    },
+    "NTPnear1DNSRECORD": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "Comment": "ntp1.near CNAME pointer to an NTP pool server",
+        "HostedZoneName": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              "ntp1.near",
+              ".",
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Type": "CNAME",
+        "TTL": "300",
+        "ResourceRecords": [
+          "0.amazon.pool.ntp.org"
+        ]
+      }
+    },
+    "NTPnear2DNSRECORD": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "Comment": "ntp2.near CNAME pointer to an NTP pool server",
+        "HostedZoneName": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              "ntp2.near",
+              ".",
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Type": "CNAME",
+        "TTL": "300",
+        "ResourceRecords": [
+          "1.amazon.pool.ntp.org"
+        ]
+      }
+    },
+    "NTPfar1DNSRECORD": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "Comment": "ntp1.far CNAME pointer to an NTP pool server",
+        "HostedZoneName": {
+          "Fn::Join": [
+            "",
+            [
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              "ntp1.far",
+              ".",
+              {
+                "Ref": "DNSDomain"
+              },
+              "."
+            ]
+          ]
+        },
+        "Type": "CNAME",
+        "TTL": "300",
+        "ResourceRecords": [
+          "2.amazon.pool.ntp.org"
+        ]
+      }
+    },
+    "PublicSubnetRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Internet Gateway Route Table from Public subnets"
+          }
+        ]
+      }
+    },
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "InternetGateway"
+        },
+        "RouteTableId": {
+          "Ref": "PublicSubnetRouteTable"
+        }
+      }
+    },
+    "RouteAssociationPublicADefault": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicSubnetRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnetA"
+        }
+      }
+    },
+    "RouteAssociationPublicBDefault": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicSubnetRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PublicSubnetB"
+        }
+      }
+    },
+    "RouteAssociationNATADefault": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicSubnetRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "NATSubnetA"
+        }
+      }
+    },
+    "RouteAssociationNATBDefault": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicSubnetRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "NATSubnetB"
+        }
+      }
+    },
+    "PrivateSubnetARouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "NAT gateway route table from private subnet A"
+          }
+        ]
+      }
+    },
+    "PrivateSubnetBRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "NAT gateway route table from private subnet B"
+          }
+        ]
+      }
+    },
+    "PrivateRouteA": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "NATInstanceA"
+        },
+        "RouteTableId": {
+          "Ref": "PrivateSubnetARouteTable"
+        }
+      }
+    },
+    "PrivateRouteB": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "NATInstanceB"
+        },
+        "RouteTableId": {
+          "Ref": "PrivateSubnetBRouteTable"
+        }
+      }
+    },
+    "RouteAssociationPrivateADefault": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateSubnetARouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PrivateSubnetA"
+        }
+      }
+    },
+    "RouteAssociationPrivateBDefault": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateSubnetBRouteTable"
+        },
+        "SubnetId": {
+          "Ref": "PrivateSubnetB"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "VpcId": {
+      "Value": {
+        "Ref": "VPC"
+      }
+    },
+    "PublicSubnetA": {
+      "Value": {
+        "Ref": "PublicSubnetA"
+      }
+    },
+    "PublicSubnetB": {
+      "Value": {
+        "Ref": "PublicSubnetB"
+      }
+    },
+    "PrivateSubnetA": {
+      "Value": {
+        "Ref": "PrivateSubnetA"
+      }
+    },
+    "PrivateSubnetB": {
+      "Value": {
+        "Ref": "PrivateSubnetB"
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "DNSDomain",
+	"ParameterValue" : "example.com"
+  },
+  {
+    "ParameterKey": "DNSSearchPath",
+	"ParameterValue" : "aws.example.com exmple.com"
+  },
+  {
+    "ParameterKey": "KeyPair",
+	"ParameterValue" : "home.example"
+  },  
+  {
+    "ParameterKey": "ManagementOrigin",
+	"ParameterValue" : "139.23.14.9/32"
+  }
+]

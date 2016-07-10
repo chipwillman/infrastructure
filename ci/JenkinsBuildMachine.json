@@ -1,0 +1,399 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "This template creates Windows Jenkins Box .",
+  "Parameters": {
+    "AZ": {
+      "AllowedValues": [
+        "ap-southeast-2a",
+        "ap-southeast-2b"
+      ],
+      "Default": "ap-southeast-2a",
+      "Description": "The Availability Zone",
+      "Type": "String"
+    },
+    "Environment": {
+      "Description": "Deployment Environment",
+      "Type": "String",
+      "Default": "myenv"
+    },
+    "KeyPairName": {
+      "Default": "chipwillman.home",
+      "Description": "Name of an existing Amazon EC2 key pair for RDP access",
+      "Type": "String"
+    },
+    "InstanceType": {
+      "Description": "Amazon EC2 instance type",
+      "Type": "String",
+      "Default": "m3.medium",
+      "AllowedValues": [
+        "t2.medium",
+        "m1.small",
+        "m1.medium",
+        "m3.medium",
+        "m1.large",
+        "m1.xlarge",
+        "m2.xlarge",
+        "m2.2xlarge",
+        "m2.4xlarge",
+        "c1.medium",
+        "c1.xlarge"
+      ]
+    },
+    "SecurityGroups": {
+      "Default": "sg-5c16c739",
+      "Description": "The security group to use",
+      "Type": "String"
+    }
+  },
+  "Mappings": {
+    "SubnetMap": {
+      "ap-southeast-2a": {
+        "subnet": "subnet-52e20825"
+      },
+      "ap-southeast-2b": {
+        "subnet": "subnet-0836fb6d"
+      }
+    },
+    "AWSInstanceType2Arch": {
+      "m1.small": {
+        "Arch": "64"
+      },
+      "m1.medium": {
+        "Arch": "64"
+      },
+      "m3.medium": {
+        "Arch": "64"
+      },
+      "m1.large": {
+        "Arch": "64"
+      },
+      "m1.xlarge": {
+        "Arch": "64"
+      },
+      "m2.xlarge": {
+        "Arch": "64"
+      },
+      "m2.2xlarge": {
+        "Arch": "64"
+      },
+      "m2.4xlarge": {
+        "Arch": "64"
+      },
+      "c1.medium": {
+        "Arch": "64"
+      },
+      "c1.xlarge": {
+        "Arch": "64"
+      }
+    },
+    "AWSRegionArch2AMI": {
+      "us-east-1": {
+        "64": "ami-79dc1b14"
+      },
+      "us-west-1": {
+        "64": "ami-cface9af"
+      },
+      "us-west-2": {
+        "64": "ami-8d0acfed"
+      },
+      "eu-west-1": {
+        "64": "ami-50e67823"
+      },
+      "ap-southeast-1": {
+        "64": "ami-c6634294"
+      },
+      "ap-southeast-2": {
+        "64": "ami-83b198e0"
+      },
+      "ap-northeast-1": {
+        "64": "ami-73d0e672"
+      },
+      "sa-east-1": {
+        "64": "ami-77a1156a"
+      }
+    }
+  },
+  "Resources": {
+    "JenkinsWaitCondition": {
+      "DependsOn": "Jenkins",
+      "Properties": {
+        "Handle": {
+          "Ref": "JenkinsWaitHandle"
+        },
+        "Timeout": "3600"
+      },
+      "Type": "AWS::CloudFormation::WaitCondition"
+    },
+    "JenkinsWaitHandle": {
+      "Type": "AWS::CloudFormation::WaitConditionHandle"
+    },
+    "Jenkins": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "files": {
+              "c:\\cfn\\cfn-hup.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[main]\n",
+                      "stack=",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      "\n",
+                      "region=",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                }
+              },
+              "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[cfn-auto-reloader-hook]\n",
+                      "triggers=post.update\n",
+                      "path=Resources.Jenkins.Metadata.AWS::CloudFormation::Init\n",
+                      "action=cfn-init.exe -v -s ",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      " -r Jenkins",
+                      " --region ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                }
+              }
+            },
+            "commands": {
+              "11-installChocolatey": {
+                "command": "@powershell -NoProfile -ExecutionPolicy unrestricted -Command \"iex ((new-object net.webclient).DownloadString('https://chocolatey.org/install.ps1'))\" && SET PATH=%PATH%;%ALLUSERSPROFILE%\\chocolatey\\bin",
+                "waitAfterCompletion": "0"
+              },
+              "12-Restart": {
+                "command": "shutdown -r -t 0",
+                "waitAfterCompletion": "forever"
+              },
+              "21-notpadplusplus": {
+                "command": "cinst -y notepadplusplus",
+                "waitAfterCompletion": "0"
+              },
+              "22-git": {
+                "command": "cinst -y git",
+                "waitAfterCompletion": "0"
+              },
+              "23-7zip": {
+                "command": "cinst -y 7zip",
+                "waitAfterCompletion": "0"
+              },
+              "24-GoogleChrome": {
+                "command": "cinst -y GoogleChrome",
+                "waitAfterCompletion": "0"
+              },
+              "25-webpi": {
+                "command": "cinst -y webpi",
+                "waitAfterCompletion": "0"
+              },
+              "26-webdeploy": {
+                "command": "cinst -y webdeploy",
+                "waitAfterCompletion": "0"
+              },
+              "27-awscli": {
+                "command": "cinst -y awscli",
+                "waitAfterCompletion": "0"
+              },
+              "28-awsPowerShell": {
+                "command": "cinst -y AWSTools.Powershell",
+                "waitAfterCompletion": "0"
+              },
+              "31-VS BuildTools": {
+                "command": "cinst -y VisualStudio2013Professional",
+                "waitAfterCompletion": "0"
+              },
+              "32-aspnetmvs": {
+                "command": "cinst -y aspnetmvc",
+                "waitAfterCompletion": "0"
+              },
+              "33-nuget.commandline": {
+                "command": "cinst -y nuget.commandline",
+                "waitAfterCompletion": "0"
+              },
+              "34-Restart": {
+                "command": "shutdown -r -t 0",
+                "waitAfterCompletion": "forever"
+              },
+              "35-msbuild.microsoft.visualstudio.web.targets": {
+                "command": "nuget install msbuild.microsoft.visualstudio.web.targets",
+                "waitAfterCompletion": "0"
+              },
+              "36-Install web server": {
+                "command": "powershell.exe -NoProfile -ExecutionPolicy unrestricted add-windowsfeature web-webserver -includeallsubfeature",
+                "waitAfterCompletion": "0"
+              },
+              "37-Install web management tools": {
+                "command": "powershell.exe -NoProfile -ExecutionPolicy unrestricted add-windowsfeature web-mgmt-tools -includeallsubfeature",
+                "waitAfterCompletion": "0"
+              },
+              "38-Install NET-WCF-HTTP-Activation45": {
+                "command": "powershell.exe -NoProfile -ExecutionPolicy unrestricted add-windowsfeature NET-WCF-HTTP-Activation45",
+                "waitAfterCompletion": "0"
+              },
+              "41-Jenkins": {
+                "command": "cinst -y jenkins",
+                "waitAfterCompletion": "0"
+              },
+              "51-EnableWinRM": {
+                "command": "@powershell -NoProfile -ExecutionPolicy unrestricted -Command \"c:\\cfn\\scripts\\EnableWinRM.ps1\"",
+                "waitAfterCompletion": "0"
+              },
+              "99-signalFinish": {
+                "command": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "cfn-signal.exe -e 0 -r \"Jenkins created\" '",
+                      {
+                        "Fn::Base64": {
+                          "Ref": "JenkinsWaitHandle"
+                        }
+                      },
+                      "'"
+                    ]
+                  ]
+                },
+                "waitAfterCompletion": "0"
+              }
+            },
+            "services": {
+              "windows": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "c:\\cfn\\cfn-hup.conf",
+                    "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": {
+              "VolumeSize": "100"
+            }
+          },
+          {
+            "DeviceName": "/dev/sdc",
+            "VirtualName": "ephemeral0"
+          }
+        ],
+        "IamInstanceProfile": "dev-build",
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            {
+              "Fn::FindInMap": [
+                "AWSInstanceType2Arch",
+                {
+                  "Ref": "InstanceType"
+                },
+                "Arch"
+              ]
+            }
+          ]
+        },
+        "KeyName": {
+          "Ref": "KeyPairName"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "SecurityGroups"
+          }
+        ],
+        "SubnetId": {
+          "Fn::FindInMap": [
+            "SubnetMap",
+            {
+              "Ref": "AZ"
+            },
+            "subnet"
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  {
+                    "Ref": "Environment"
+                  },
+                  "-jenkins"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Env",
+            "Value": "aws"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "<script>\n",
+                "cfn-init.exe -v -s ",
+                {
+                  "Ref": "AWS::StackId"
+                },
+                " -r Jenkins",
+                " --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                "\n",
+                "</script>"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "JenkinsPrivateIp": {
+      "Description": "IP address of EC2 Instance",
+      "Value": {
+        "Fn::GetAtt": [
+          "Jenkins",
+          "PrivateIp"
+        ]
+      }
+    }
+  }
+}

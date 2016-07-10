@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "DNSDomain",
+	"ParameterValue" : "chipwillman.com"
+  },
+  {
+    "ParameterKey": "DNSSearchPath",
+	"ParameterValue" : "aws.chipwillman.com chipwillman.com"
+  },
+  {
+    "ParameterKey": "KeyPair",
+	"ParameterValue" : "home.chipwillman"
+  },  
+  {
+    "ParameterKey": "ManagementOrigin",
+	"ParameterValue" : "122.151.148.92/32"
+  }
+]
