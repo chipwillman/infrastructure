@@ -192,6 +192,79 @@
       },
       "Type": "AWS::EC2::SecurityGroup"
 	},
+    "JenkinsServerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "ec2.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "permit-s3-and-cfn",
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "cloudformation:*",
+                  "Resource": "*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "s3:GetObject",
+                  "Resource": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:aws:s3:::",
+                        { "Ref": "ManifestS3BucketName" },
+                        "/*"
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "s3:ListBucket",
+                  "Resource": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:aws:s3:::",
+                        { "Ref": "ManifestS3BucketName" }
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+   "JenkinsServerInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          { "Ref": "JenkinsServerRole" }
+        ]
+      }
+    },
+ 
     "Jenkins": {
       "Type": "AWS::EC2::Instance",
       "Metadata": {
@@ -368,7 +441,7 @@
             "VirtualName": "ephemeral0"
           }
         ],
-        "IamInstanceProfile": "dev-build",
+        "IamInstanceProfile": { Ref: "JenkinsServerInstanceProfile" },
         "InstanceType": {
           "Ref": "InstanceType"
         },
