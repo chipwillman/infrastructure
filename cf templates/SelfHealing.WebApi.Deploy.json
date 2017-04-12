@@ -1,0 +1,367 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "web-api template example",
+  "Parameters": {
+	"envmap" :{
+      "Description": "The name of the environment you want to deploy to.",
+      "Type": "String",
+      "AllowedValues": [
+        "pvt",
+        "demo"
+      ],
+      "Default": "pvt"
+	},	
+    "environment": {
+      "Description": "The name of the environment you want to deploy to.",
+      "Type": "String",
+      "Default": "pvt"
+    },
+    "ami": {
+      "Description": "The AMI of the machine you want to launch",
+      "Type": "String",
+      "MinLength": "12",
+      "MaxLength": "12",
+      "AllowedPattern": "ami-[a-f0-9]{8}",
+      "Default": "ami-XXXXXXXX"
+    },
+    "instanceType": {
+      "Description": "The type of the EC2 instance you want",
+      "Type": "String",
+      "AllowedValues": [
+        "t2.micro",
+        "t2.medium",
+        "m4.large",
+        "m4.xlarge"
+      ],
+      "Default": "t2.medium"
+    },
+    "ELBSecurityGroup": {
+      "Description": "The name of the security group for the ELB",
+      "Type": "String"
+    },
+    "InstanceSecurityGroup": {
+      "Description": "The name of the security group for the Instance",
+      "Type": "String"
+    },
+    "WebApiProfile": {
+      "Description": "The name of the security group for the ELB",
+      "Type": "String"
+    },
+	"ApplicationName": {
+      "Description": "The name of the application",
+      "Type": "String",
+      "Default": "sample-app"
+	}
+  },
+  "Mappings": {
+    "VpcMap": {
+      "pvt": {
+        "vpc": "vpc-XXXXXXXX",
+        "backendSubnets": [
+          "subnet-XXXXXXXX",
+          "subnet-XXXXXXXX"
+        ],
+        "backendElbSubnets": [
+          "subnet-XXXXXXXX",
+          "subnet-XXXXXXXX"
+        ],
+        "frontendSubnets": [
+          "subnet-XXXXXXXX",
+          "subnet-XXXXXXXX"
+        ],
+        "availabilityZones": [
+          "ap-southeast-2a",
+          "ap-southeast-2b"
+        ],
+        "hostedZoneSubdomain": "pvt",
+        "keyName": "privatekey"
+      },
+      "demo": {
+        "vpc": "vpc-XXXXXXXX",
+        "backendSubnets": [
+          "subnet-XXXXXXXX",
+          "subnet-XXXXXXXX"
+        ],
+        "ccSubnets": [
+          "subnet-XXXXXXXX",
+          "subnet-XXXXXXXX"
+        ],
+        "frontendSubnets": [
+          "subnet-XXXXXXXX",
+          "subnet-XXXXXXXX"
+        ],
+        "availabilityZones": [
+          "ap-southeast-2a",
+          "ap-southeast-2b"
+        ],
+        "hostedZoneSubdomain": "demo",
+        "keyName": "privatekey"
+      }
+    }
+  },
+  "Resources": {
+    "WebApiELB": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "Subnets": {
+          "Fn::FindInMap": [
+            "VpcMap",
+            {
+              "Ref": "envmap"
+            },
+            "backendElbSubnets"
+          ]
+        },
+        "Scheme": "internal",
+        "HealthCheck": {
+          "Target": "HTTP:80/Diagnostic/AppRunning",
+          "Interval": "30",
+          "HealthyThreshold": "2",
+          "Timeout": "15",
+          "UnhealthyThreshold": "3"
+        },
+        "Listeners": [
+          {
+            "LoadBalancerPort": "80",
+            "InstancePort": "80",
+            "InstanceProtocol": "HTTP",
+            "Protocol": "HTTP"
+          }
+        ],
+        "SecurityGroups": [
+          {
+            "Ref": "ELBSecurityGroup"
+          }
+        ]
+      }
+    },
+    "WebApiAutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AvailabilityZones": {
+          "Fn::FindInMap": [
+            "VpcMap",
+            {
+              "Ref": "envmap"
+            },
+            "availabilityZones"
+          ]
+        },
+        "VPCZoneIdentifier": {
+          "Fn::FindInMap": [
+            "VpcMap",
+            {
+              "Ref": "envmap"
+            },
+            "backendSubnets"
+          ]
+        },
+        "HealthCheckGracePeriod": 600,
+        "HealthCheckType": "ELB",
+        "LaunchConfigurationName": {
+          "Ref": "WebApiLaunchConfiguration"
+        },
+        "MinSize": 1,
+        "MaxSize": 2,
+        "LoadBalancerNames": [
+          {
+            "Ref": "WebApiELB"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "CloudFormationStack",
+            "Value": {
+              "Ref": "AWS::StackName"
+            },
+            "PropagateAtLaunch": true
+          },
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                " ",
+                [
+                  {
+                    "Ref": "environment"
+                  },
+				  "-",
+				  {
+					"Ref": "ApplicationName"
+				  }
+                ]
+              ]
+            },
+            "PropagateAtLaunch": true
+          },
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "environment"
+            },
+            "PropagateAtLaunch": true
+          }
+        ]
+      },
+      "UpdatePolicy": {
+        "AutoScalingRollingUpdate": {
+          "MaxBatchSize": "2",
+          "MinInstancesInService": "1"
+        }
+      }
+    },
+    "WebApiLaunchConfiguration": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "files": {
+              "c:\\cfn\\cfn-hup.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[main]\n",
+                      "stack=",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      "\n",
+                      "region=",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                }
+              },
+              "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[cfn-auto-reloader-hook]\n",
+                      "triggers=post.update\n",
+                      "path=Resources.WebApiLaunchConfiguration.Metadata.AWS::CloudFormation::Init\n",
+                      "action=cfn-init.exe -v -s ",
+                      {
+                        "Ref": "AWS::StackId"
+                      },
+                      " -r WebApiLaunchConfiguration",
+                      " --region ",
+                      {
+                        "Ref": "AWS::Region"
+                      },
+                      "\n"
+                    ]
+                  ]
+                }
+              }
+            },
+            "services": {
+              "windows": {
+                "cfn-hup": {
+                  "enabled": "true",
+                  "ensureRunning": "true",
+                  "files": [
+                    "c:\\cfn\\cfn-hup.conf",
+                    "c:\\cfn\\hooks.d\\cfn-auto-reloader.conf"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "InstanceType": {
+          "Ref": "instanceType"
+        },
+        "ImageId": {
+          "Ref": "ami"
+        },
+        "SecurityGroups": [
+          {
+            "Ref": "InstanceSecurityGroup"
+          }
+        ],
+        "KeyName": {
+          "Fn::FindInMap": [
+            "VpcMap",
+            {
+              "Ref": "envmap"
+            },
+            "keyName"
+          ]
+        },
+        "IamInstanceProfile": {
+          "Ref": "WebApiProfile"
+        },
+		"UserData": {
+		  "Fn::Base64": {
+			"Fn::Join": [
+			  "",
+			  [
+				"<script>\n",
+				"cfn-init.exe -v -s ",
+				{
+				  "Ref": "AWS::StackId"
+				},
+				" -r WebApiLaunchConfiguration",
+				" --region ",
+				{
+				  "Ref": "AWS::Region"
+				},
+				"\n",
+				"</script>"
+			  ]
+			]
+		  }
+		}
+      }
+    },
+    "WebApiCNAME": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "HostedZoneName": {
+          "Fn::Join": [
+            ".",
+            [
+              {
+                "Ref": "environment"
+              },
+              "chipwillman.com."
+            ]
+          ]
+        },
+        "Comment": "DNS name for WebApi.",
+        "Name": {
+          "Fn::Join": [
+            ".",
+            [
+			  {
+				"Ref": "ApplicationName"
+			  },
+              {
+                "Ref": "environment"
+              },
+              "chipwillman.com."
+            ]
+          ]
+        },
+        "Type": "CNAME",
+        "TTL": "60",
+        "ResourceRecords": [
+          {
+            "Fn::GetAtt": [
+              "WebApiELB",
+              "DNSName"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {}
+}
